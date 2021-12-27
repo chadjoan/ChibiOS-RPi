@@ -87,6 +87,29 @@ typedef void (*i2ccallback_t)(I2CDriver *i2cp, i2cstatus_t sts);
 typedef struct {
   /** @brief I2C bus bit rate.*/
   uint32_t                  ic_speed;
+
+  // TODO: Would adding this field break existing code? (Currently unimplemented.)
+  /** @brief   Which GPIO pin alt-mode to assume when initializing.
+   *
+   *  @details This effectively decides which GPIO pins are used to service
+   *           the I2C controller that's being configured.
+   *
+   *           The valid values are GPFN_ALT0 through GPFN_ALT5. If some other
+   *           value is placed here, GPFN_ALT0 will be assumed. If the given
+   *           alt-mode does not define any GPIO pins for the controller
+   *           being configured, then no GPIO pins will be set into I2C mode
+   *           for that control (e.g. when `i2cStart` is called), which
+   *           renders that controller inaccessible. (This behavior prevents
+   *           different pins from different alt-modes from being accidentally
+   *           set into I2C mode.)
+   *
+   *           As an example: configuring controller #1 to use alt-mode 0
+   *           (GPFN_ALT0) will cause GPIO pins 2 and 3 to be set as SDA1 and SCL1,
+   *           respectively. Likewise, configuring controller #1 to use the
+   *           alt-mode 2 (GPFN_ALT2) will cause GPIO pins 44 and 45 to be
+   *           set as SDA1 and SCL1.
+   */
+  //uint8_t                   alt_mode;
   /* End of the mandatory fields.*/
 } I2CConfig;
 
@@ -163,7 +186,139 @@ struct I2CDriver {
 /* External declarations.                                                    */
 /*===========================================================================*/
 
-extern I2CDriver I2C0;
+#if !defined(__DOXYGEN__)
+
+#if ( BCM2835_I2C_USE_I2C0 \
+  /*|| (defined(BOARD_...) || ...)*/ )
+  extern I2CDriver I2CD0;
+  #define BCM2835_I2C_BSC0_COUNT_ 1
+#else
+  #define BCM2835_I2C_BSC0_COUNT_ 0
+#endif
+
+#if ( BCM2835_I2C_USE_I2C1 \
+  || (defined(BOARD_RP_ZERO) /* || ... */) )
+  extern I2CDriver I2CD1;
+  #define BCM2835_I2C_BSC1_COUNT_ 1
+#else
+  #define BCM2835_I2C_BSC1_COUNT_ 0
+#endif
+
+#if BCM2835_I2C_USE_I2C2
+  extern I2CDriver I2CD2;
+  #define BCM2835_I2C_BSC2_COUNT_ 1
+#else
+  #define BCM2835_I2C_BSC2_COUNT_ 0
+#endif
+
+#define BCM2835_I2C_CONTROLLER_INITIAL_COUNT_ \
+  ( BCM2835_I2C_BSC0_COUNT_ \
+  + BCM2835_I2C_BSC1_COUNT_ \
+  + BCM2835_I2C_BSC2_COUNT_ )
+
+// Backwards compatibility:
+//
+// If the caller didn't specify which I2C controller to use, and we don't have
+// a board definition telling us which one makes sense, then fall back to using
+// the zero'th controller.
+//
+// If not for backwards compability, this would be undesirable, as it can lead
+// to bugs (e.g. mysteriously non-working I2C busses). The caller should be
+// explicit about what controller they want to use, or provide enough contextual
+// information (ex: which board) that we can "figure out" which I2C makes sense.
+//
+#if BCM2835_I2C_CONTROLLER_INITIAL_COUNT_ == 0
+  extern I2CDriver I2CD0;
+  #define BCM2835_I2C_BSC0_ENABLED_ 1
+  #define BCM2835_I2C_BSC0_COMPAT_  1
+  #define BCM2835_I2C_CONTROLLER_COUNT_ (1)
+#else
+  #define BCM2835_I2C_CONTROLLER_COUNT_ BCM2835_I2C_CONTROLLER_INITIAL_COUNT_
+#endif
+
+#ifndef BCM2835_I2C_BSC0_ENABLED_
+  #define BCM2835_I2C_BSC0_ENABLED_  BCM2835_I2C_BSC0_COUNT_
+#endif
+
+#ifndef BCM2835_I2C_BSC1_ENABLED_
+  #define BCM2835_I2C_BSC1_ENABLED_  BCM2835_I2C_BSC1_COUNT_
+#endif
+
+#ifndef BCM2835_I2C_BSC2_ENABLED_
+  #define BCM2835_I2C_BSC2_ENABLED_  BCM2835_I2C_BSC2_COUNT_
+#endif
+
+#endif /* !defined(__DOXYGEN__) */
+
+
+#if (BCM2835_I2C_BSC0_ENABLED_ && !defined(BOARD_NAME)) || defined(__DOXYGEN__)
+/**
+ * @brief   Original symbol used to refer to the BCM2835's 0th I2C controller.
+ *
+ * @details Replaced by I2CD0, as this naming is more consistent with other
+ *          multiple-I2C-controller chips in the ChibiOS project (ex: STM32).
+ *
+ * @deprecated
+ */
+#define I2C0 I2CD0
+#endif
+
+#ifdef BOARD_NAME
+
+  #if defined(BOARD_RP_ZERO) || defined(__DOXYGEN__)
+/**
+ * @brief   The default I2C controller for the board that the BCM2835 is installed on.
+ *
+ * @details Of the I2C controllers with GPIO pins exposed on the selected
+ *          board configuration (ex: `$(CHIBIOS)boards/RP_ZERO`) and that are
+ *          also not reserved by Broadcom or the board producer/manufacturer
+ *          (ex: Raspberry Pi), this will refer to the I2C controller with
+ *          its SCL line on the lowest-numbered GPIO pin.
+ */
+    #define I2CD I2CD1
+
+/**
+ * @brief   The number of the default I2C controller.
+ *
+ * @details For example: if I2CD is defined as I2CD1, then this would expand to `1`.
+ */
+    #define I2C_DEFAULT_DRIVER_NUMBER   1
+
+  /* It is possible to set the I2C controller in single-controller setups as
+   * the default controller, but could lead to awkward situations:
+   * "why did I2CD work, but then I added a second controller, and it no longer works?"
+   * Probably not worth it.
+   * Here's what it looks like if we decided that it were worth it:
+  #elif (BCM2835_I2C_CONTROLLER_COUNT_ == 1)
+    // Explicit single-controller usage.
+    // (Don't use derivatives like `BCM2835_I2C_BSC0_ENABLED_`, because
+    // if `BCM2835_I2C_BSC0_ENABLED_ && !BCM2835_I2C_USE_I2C0`, it means
+    // the caller didn't explicitly enable that controller, so it's not
+    // a reasonable default.
+    #if   BCM2835_I2C_USE_I2C0
+      #define I2CD I2CD0
+      #define I2C_DEFAULT_DRIVER_NUMBER 0
+    #elif BCM2835_I2C_USE_I2C1
+      #define I2CD I2CD1
+      #define I2C_DEFAULT_DRIVER_NUMBER 1
+    #elif BCM2835_I2C_USE_I2C2
+      #define I2CD I2CD2
+      #define I2C_DEFAULT_DRIVER_NUMBER 2
+    #endif
+  */
+  #elif I2C_IGNORE_MISSING_BOARD
+    // This branch exists to make it possible to ignore the below
+    // "This board [...] does not have a default I2C driver" error.
+  #else
+    #error "This board for the BCM2835 does not have a default I2C driver assigned," \
+      " so the I2CD macro is unavailable. Either provide a default for this board (ideally)," \
+      " or if that's not practical, define the I2C_IGNORE_MISSING_BOARD macro to disable this" \
+      " error and leave the I2CD macro undefined (ex: pass -DI2C_IGNORE_MISSING_BOARD to your" \
+      " C compiler)."
+  #endif
+
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {

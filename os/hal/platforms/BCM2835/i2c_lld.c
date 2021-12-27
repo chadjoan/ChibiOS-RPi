@@ -39,7 +39,44 @@
 /* Driver exported variables.                                                */
 /*===========================================================================*/
 
-I2CDriver I2C0;
+// TODO: What board uses BSC0 as its default/exposed I2C controller?
+//   (It seems to be what Steve Bate's was using.)
+/**
+ * @brief   Driver for the I2C (BSC) controller numbered 0 (zero) in the datasheet for the BCM2835.
+ *
+ * @details Enabled by defining BCM2835_I2C_USE_I2C0 to 1, or by defining
+ *          HAL_USE_I2C to 1 and including a board configuration that
+ *          uses this controller as its default I2C controller.
+ */
+#if BCM2835_I2C_BSC0_ENABLED_ || defined(__DOXYGEN__)
+I2CDriver I2CD0;
+#endif
+
+/**
+ * @brief   Driver for the I2C (BSC) controller numbered 1 (one) in the datasheet for the BCM2835.
+ *
+ * @details Enabled by defining BCM2835_I2C_USE_I2C1 to 1, or by defining
+ *          HAL_USE_I2C to 1 and including a board configuration that
+ *          uses this controller as its default I2C controller.
+ */
+#if BCM2835_I2C_BSC1_ENABLED_ || defined(__DOXYGEN__)
+I2CDriver I2CD1;
+#endif
+
+/**
+ * @brief   Driver for the I2C (BSC) controller numbered 1 (one) in the datasheet for the BCM2835.
+ *
+ * @details Enabled by defining BCM2835_I2C_USE_I2C2 to 1.
+ *
+ *          The BCM2835 "Peripherals" datasheet does not mention any GPIO pins
+ *          for this controller. This controller will be completely inaccessible,
+ *          as there are no pins for i2cStart to configure as I2C pins when
+ *          attempting to start this controller. This controller is, nonetheless,
+ *          made available, just in case someone knows what to do with it.
+ */
+#if BCM2835_I2C_BSC2_ENABLED_ || defined(__DOXYGEN__)
+I2CDriver I2CD2;
+#endif
 
 /*===========================================================================*/
 /* Driver local variables.                                                   */
@@ -138,8 +175,20 @@ void i2c_lld_serve_interrupt(I2CDriver *i2cp) {
  * @notapi
  */
 void i2c_lld_init(void) {
-  I2C0.device = BSC0_ADDR;
-  i2cObjectInit(&I2C0);
+#if BCM2835_I2C_BSC0_ENABLED_
+  I2CD0.device = BSC0_ADDR;
+  i2cObjectInit(&I2CD0);
+#endif
+
+#if BCM2835_I2C_BSC1_ENABLED_
+  I2CD1.device = BSC1_ADDR;
+  i2cObjectInit(&I2CD1);
+#endif
+
+#if BCM2835_I2C_BSC2_ENABLED_
+  I2CD2.device = BSC2_ADDR;
+  i2cObjectInit(&I2CD2);
+#endif
 }
 
 /**
@@ -150,9 +199,24 @@ void i2c_lld_init(void) {
  * @notapi
  */
 void i2c_lld_start(I2CDriver *i2cp) {
+
   /* Set up GPIO pins for I2C */
-  bcm2835_gpio_fnsel(GPIO0_PAD, GPFN_ALT0);
-  bcm2835_gpio_fnsel(GPIO1_PAD, GPFN_ALT0);
+#if BCM2835_I2C_BSC0_ENABLED_
+  if ( i2cp->device == BSC0_ADDR ) {
+    bcm2835_gpio_fnsel(GPIO0_PAD, GPFN_ALT0);
+    bcm2835_gpio_fnsel(GPIO1_PAD, GPFN_ALT0);
+  }
+#endif
+
+#if BCM2835_I2C_BSC1_ENABLED_
+  if ( i2cp->device == BSC1_ADDR ) {
+    bcm2835_gpio_fnsel(GPIO2_PAD, GPFN_ALT0);
+    bcm2835_gpio_fnsel(GPIO3_PAD, GPFN_ALT0);
+  }
+#endif
+
+  // The I2C #2 controller (BSC2) doesn't seem to have any GPIO pins
+  // associated with it. This means we can't enable it.
 
   uint32_t speed = i2cp->config->ic_speed;
   if (speed != 0 && speed != 100000)
@@ -170,8 +234,19 @@ void i2c_lld_start(I2CDriver *i2cp) {
  */
 void i2c_lld_stop(I2CDriver *i2cp) {
   /* Set GPIO pin function to default */
-  bcm2835_gpio_fnsel(GPIO0_PAD, GPFN_IN);
-  bcm2835_gpio_fnsel(GPIO1_PAD, GPFN_IN);
+#if BCM2835_I2C_BSC0_ENABLED_
+  if ( i2cp->device == BSC0_ADDR ) {
+    bcm2835_gpio_fnsel(GPIO0_PAD, GPFN_IN);
+    bcm2835_gpio_fnsel(GPIO1_PAD, GPFN_IN);
+  }
+#endif
+
+#if BCM2835_I2C_BSC1_ENABLED_
+  if ( i2cp->device == BSC1_ADDR ) {
+    bcm2835_gpio_fnsel(GPIO2_PAD, GPFN_IN);
+    bcm2835_gpio_fnsel(GPIO3_PAD, GPFN_IN);
+  }
+#endif
 
   i2cp->device->control &= ~BSC_I2CEN;
 }

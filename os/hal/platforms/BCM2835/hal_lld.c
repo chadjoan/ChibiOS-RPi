@@ -97,8 +97,16 @@ CH_IRQ_HANDLER(IrqHandler)
   sd_lld_serve_interrupt(&SD1);
 #endif
 
-#if HAL_USE_I2C
-  i2c_lld_serve_interrupt(&I2C0);
+#if BCM2835_I2C_BSC0_ENABLED_
+  i2c_lld_serve_interrupt(&I2CD0);
+#endif
+
+#if BCM2835_I2C_BSC1_ENABLED_
+  i2c_lld_serve_interrupt(&I2CD1);
+#endif
+
+#if BCM2835_I2C_BSC2_ENABLED_
+  i2c_lld_serve_interrupt(&I2CD2);
 #endif
 
 #if HAL_USE_SPI
